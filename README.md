@@ -1,8 +1,11 @@
 # RepoScope - GitHub 仓库健康度体检仪表盘
 
 输入任意公开 GitHub 仓库 URL，自动分析并可视化展示 Star、Fork、活跃度、语言分布、社区健康度等核心指标。支持 AI 模型辅助评分。
-<img width="2549" height="1266" alt="93d285ef7ff3dfa3552f831c051b207b" src="https://github.com/user-attachments/assets/2dff0f16-efbe-4dbe-8f39-92bcc011918d" />
+
 <img width="2549" height="1266" alt="d436839dc933d09576e0e3da50f1e527" src="https://github.com/user-attachments/assets/28fe6da0-b8f5-4e3a-8de7-84bca7e0b7c1" />
+
+<img width="2549" height="1266" alt="93d285ef7ff3dfa3552f831c051b207b" src="https://github.com/user-attachments/assets/2dff0f16-efbe-4dbe-8f39-92bcc011918d" />
+
 
 
 ## 功能特性
