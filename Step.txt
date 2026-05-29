@@ -1,518 +1,275 @@
-1、拆分需求
-核心功能： 用户输入一个公开 GitHub 仓库 URL，例如：https://github.com/xxx，系统自动分析该仓库，并在 Web 页面中展示： 
-•  基础信息：名称、描述、作者、创建时间、更新时间  
-•  热度指标：Star、Fork、Watch、Issues、Pull Requests  
-•  活跃度指标：最近提交、最近 Release、最近更新时间  
-•  代码结构：语言分布、目录结构、文件数量  
-•  社区健康度：Issue 关闭率、PR 合并情况、贡献者数量 
-•  文档质量：README、LICENSE、CONTRIBUTING、CHANGELOG 是否存在  
-•  AI 项目评分：从维护活跃度、社区热度、工程规范、文档质量、可持续性等维度评分
+# RepoScope 项目设计文档
 
-2、前端设计——借助stitch设计前端原型
-<!DOCTYPE html>
+> GitHub 仓库健康度体检仪表盘 — 从需求到实现的完整记录
 
-<html class="light" lang="zh-CN"><head>
-<meta charset="utf-8"/>
-<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
-<title>RepoPulse AI - vercel/next.js 分析报告</title>
-<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet"/>
-<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
-<style>
-        .material-symbols-outlined {
-            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
-        }
-        .gauge-container {
-            position: relative;
-            width: 140px;
-            height: 140px;
-        }
-        .gauge-svg {
-            transform: rotate(-90deg);
-        }
-        .gauge-background {
-            fill: none;
-            stroke: #eff1f3;
-            stroke-width: 12;
-        }
-        .gauge-progress {
-            fill: none;
-            stroke: #006e2c;
-            stroke-width: 12;
-            stroke-dasharray: 440;
-            stroke-dashoffset: calc(440 - (440 * 94) / 100);
-            stroke-linecap: round;
-            transition: stroke-dashoffset 1s ease-in-out;
-        }
-    </style>
-<script id="tailwind-config">
-        tailwind.config = {
-            darkMode: "class",
-            theme: {
-                extend: {
-                    "colors": {
-                        "tertiary-fixed": "#ffdbcd",
-                        "on-primary-fixed": "#001a41",
-                        "tertiary": "#923800",
-                        "surface-container-lowest": "#ffffff",
-                        "tertiary-container": "#ba4900",
-                        "surface-container-low": "#f1f4fa",
-                        "surface-container-highest": "#e0e2e9",
-                        "on-primary-fixed-variant": "#004493",
-                        "surface-variant": "#e0e2e9",
-                        "outline-variant": "#c2c6d6",
-                        "surface-container": "#ebeef5",
-                        "secondary-container": "#88fb99",
-                        "primary": "#0051ae",
-                        "on-secondary-fixed": "#002108",
-                        "surface-dim": "#d7dae1",
-                        "background": "#f7f9ff",
-                        "on-background": "#181c21",
-                        "surface-tint": "#005bc0",
-                        "error": "#ba1a1a",
-                        "primary-fixed": "#d8e2ff",
-                        "secondary": "#006e2c",
-                        "on-tertiary-fixed-variant": "#7c2e00",
-                        "on-primary": "#ffffff",
-                        "on-tertiary": "#ffffff",
-                        "on-tertiary-container": "#ffece5",
-                        "on-primary-container": "#ecefff",
-                        "error-container": "#ffdad6",
-                        "on-secondary-container": "#00742f",
-                        "inverse-on-surface": "#eef1f8",
-                        "secondary-fixed": "#88fb99",
-                        "on-error-container": "#93000a",
-                        "outline": "#727785",
-                        "on-tertiary-fixed": "#360f00",
-                        "on-surface": "#181c21",
-                        "surface-container-high": "#e5e8ef",
-                        "surface": "#f7f9ff",
-                        "on-secondary": "#ffffff",
-                        "primary-fixed-dim": "#adc6ff",
-                        "primary-container": "#0969da",
-                        "tertiary-fixed-dim": "#ffb595",
-                        "surface-bright": "#f7f9ff",
-                        "inverse-surface": "#2d3136",
-                        "on-surface-variant": "#424753",
-                        "inverse-primary": "#adc6ff",
-                        "on-secondary-fixed-variant": "#00531f",
-                        "secondary-fixed-dim": "#6bde80",
-                        "on-error": "#ffffff"
-                    },
-                    "borderRadius": {
-                        "DEFAULT": "0.125rem",
-                        "lg": "0.25rem",
-                        "xl": "0.5rem",
-                        "full": "0.75rem"
-                    },
-                    "spacing": {
-                        "base": "4px",
-                        "xl": "32px",
-                        "md": "16px",
-                        "container-margin": "16px",
-                        "xs": "4px",
-                        "gutter": "12px",
-                        "sm": "8px",
-                        "lg": "24px"
-                    },
-                    "fontFamily": {
-                        "body-sm": ["Inter"],
-                        "body-lg": ["Inter"],
-                        "headline-sm": ["Inter"],
-                        "headline-lg": ["Inter"],
-                        "headline-md": ["Inter"],
-                        "body-md": ["Inter"],
-                        "label-md": ["JetBrains Mono"],
-                        "label-sm": ["JetBrains Mono"],
-                        "headline-lg-mobile": ["Inter"]
-                    },
-                    "fontSize": {
-                        "body-sm": ["12px", {"lineHeight": "18px", "fontWeight": "400"}],
-                        "body-lg": ["16px", {"lineHeight": "24px", "fontWeight": "400"}],
-                        "headline-sm": ["16px", {"lineHeight": "24px", "fontWeight": "600"}],
-                        "headline-lg": ["24px", {"lineHeight": "32px", "letterSpacing": "-0.02em", "fontWeight": "600"}],
-                        "headline-md": ["20px", {"lineHeight": "28px", "letterSpacing": "-0.01em", "fontWeight": "600"}],
-                        "body-md": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
-                        "label-md": ["13px", {"lineHeight": "16px", "fontWeight": "500"}],
-                        "label-sm": ["11px", {"lineHeight": "14px", "fontWeight": "500"}],
-                        "headline-lg-mobile": ["22px", {"lineHeight": "28px", "fontWeight": "600"}]
-                    }
-                }
-            }
-        }
-    </script>
-</head>
-<body class="bg-background text-on-background font-body-md overflow-x-hidden">
-<!-- TopNavBar -->
-<header class="sticky top-0 w-full flex justify-between items-center px-container-margin h-16 z-50 bg-surface border-b border-outline-variant shadow-sm">
-<div class="flex items-center gap-xl">
-<span class="text-headline-md font-headline-md font-bold text-primary">RepoPulse AI</span>
-<div class="hidden md:flex items-center gap-lg">
-<a class="text-primary font-bold border-b-2 border-primary text-label-md font-label-md py-xs" href="#">概览</a>
-<a class="text-on-surface-variant text-label-md font-label-md hover:text-primary transition-colors py-xs" href="#">历史报告</a>
-<a class="text-on-surface-variant text-label-md font-label-md hover:text-primary transition-colors py-xs" href="#">组织</a>
-</div>
-</div>
-<div class="flex items-center gap-md">
-<div class="relative group hidden sm:block">
-<input class="bg-surface-container-low border border-outline-variant rounded-full px-md py-1.5 text-body-sm w-64 focus:outline-none focus:border-primary transition-all" placeholder="搜索代码库..." type="text"/>
-<span class="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-md">search</span>
-</div>
-<button class="material-symbols-outlined text-on-surface-variant hover:bg-surface-container-low p-xs rounded-full transition-colors" data-icon="history">history</button>
-<button class="material-symbols-outlined text-on-surface-variant hover:bg-surface-container-low p-xs rounded-full transition-colors" data-icon="notifications">notifications</button>
-<img alt="User profile" class="w-8 h-8 rounded-full border border-outline-variant" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBgb61pFoJtIS5x0WIZCd4rAI1PCC2qH6-gS9JeRIts6z2ayqrAfIwrfCtDo8Xo7zRYJoNI87UZoB2OBzkf1NoRQHPMALjJhCu8b6mTLdKK5pbeRfHNfwYuEekNmaQgKrL0pl8n5puRWF44enu1OwJvZCy4F93whzFcwEI_3pF9eAF7592ZIklR_1MRFT60B0wp573wY0BvwwVDqo-62IoADa0vsYGIwuwHsYwfLPQlBRRYCL6YpmgDvcptGPGen2XTPUVorkggyt81"/>
-</div>
-</header>
-<main class="max-w-[1400px] mx-auto p-lg lg:px-xl">
-<!-- Header Section -->
-<section class="mb-lg flex flex-col md:flex-row md:items-end justify-between gap-md border-b border-outline-variant pb-md">
-<div>
-<div class="flex items-center gap-xs text-on-surface-variant mb-xs">
-<span class="font-body-md text-body-md">vercel</span>
-<span class="material-symbols-outlined text-sm">chevron_right</span>
-<span class="font-headline-sm text-headline-sm text-on-surface font-bold">next.js</span>
-<span class="bg-secondary-container text-on-secondary-container px-sm py-xs rounded text-label-sm font-label-sm ml-sm">Public</span>
-</div>
-<p class="text-on-surface-variant text-body-md max-w-3xl">
-                React 框架，为生产环境提供最佳的开发体验和所有的功能：混合静态和服务器渲染、TypeScript 支持、智能捆绑、路由预取等。
-            </p>
-</div>
-<div class="flex gap-sm">
-<button class="bg-primary text-on-primary px-lg py-sm rounded-lg font-label-md text-label-md hover:opacity-90 transition-opacity flex items-center gap-sm">
-<span class="material-symbols-outlined text-md">refresh</span>
-                重新分析
-            </button>
-<button class="border border-outline text-on-surface-variant px-lg py-sm rounded-lg font-label-md text-label-md hover:bg-surface-container-low transition-colors">
-                分享
-            </button>
-</div>
-</section>
-<!-- Main Grid -->
-<div class="grid grid-cols-12 gap-gutter">
-<!-- Left Column: Score & Stats -->
-<div class="col-span-12 xl:col-span-4 flex flex-col gap-gutter">
-<!-- AI Health Score Card -->
-<div class="bg-surface-container-lowest border border-outline-variant p-lg rounded-xl flex flex-col items-center">
-<div class="w-full flex justify-between items-center mb-md">
-<h3 class="text-headline-sm font-headline-sm">AI 健康评分</h3>
-<span class="material-symbols-outlined text-on-surface-variant cursor-help" title="基于代码质量、维护频率及社区参与度综合计算">info</span>
-</div>
-<div class="gauge-container my-md">
-<svg class="gauge-svg" height="140" width="140">
-<circle class="gauge-background" cx="70" cy="70" r="62"></circle>
-<circle class="gauge-progress" cx="70" cy="70" r="62" style="stroke-dasharray: 390; stroke-dashoffset: calc(390 - (390 * 94) / 100);"></circle>
-</svg>
-<div class="absolute inset-0 flex flex-col items-center justify-center">
-<span class="text-headline-lg font-label-md text-on-surface font-bold">94</span>
-<span class="text-label-sm font-label-sm text-secondary">优秀</span>
-</div>
-</div>
-<p class="text-body-sm font-body-sm text-on-surface-variant text-center px-md">
-                    代码库展现出极高的活跃度与健康的维护周期
-                </p>
-</div>
-<!-- Key Metrics Grid -->
-<div class="grid grid-cols-2 gap-sm">
-<div class="bg-surface-container-low border border-outline-variant p-md rounded-xl">
-<div class="flex items-center gap-xs text-on-surface-variant mb-1">
-<span class="material-symbols-outlined text-sm">star</span>
-<span class="text-label-sm font-label-sm">Stars</span>
-</div>
-<span class="text-headline-sm font-bold">110k+</span>
-</div>
-<div class="bg-surface-container-low border border-outline-variant p-md rounded-xl">
-<div class="flex items-center gap-xs text-on-surface-variant mb-1">
-<span class="material-symbols-outlined text-sm">fork_left</span>
-<span class="text-label-sm font-label-sm">Forks</span>
-</div>
-<span class="text-headline-sm font-bold">25.4k</span>
-</div>
-<div class="bg-surface-container-low border border-outline-variant p-md rounded-xl">
-<div class="flex items-center gap-xs text-on-surface-variant mb-1">
-<span class="material-symbols-outlined text-sm">visibility</span>
-<span class="text-label-sm font-label-sm">Watchers</span>
-</div>
-<span class="text-headline-sm font-bold">1.8k</span>
-</div>
-<div class="bg-surface-container-low border border-outline-variant p-md rounded-xl">
-<div class="flex items-center gap-xs text-error mb-1">
-<span class="material-symbols-outlined text-sm">error</span>
-<span class="text-label-sm font-label-sm text-on-surface-variant">Issues</span>
-</div>
-<span class="text-headline-sm font-bold">1.2k</span>
-</div>
-</div>
-<!-- Recent History Section -->
-<div class="bg-surface-container-lowest border border-outline-variant p-lg rounded-xl">
-<h3 class="text-label-md font-label-md font-bold mb-md text-on-surface flex items-center gap-sm">
-<span class="material-symbols-outlined text-md">history</span>
-                    近期报告历史
-                </h3>
-<div class="space-y-sm">
-<div class="flex justify-between items-center p-sm hover:bg-surface-container-low rounded transition-colors cursor-pointer border border-transparent hover:border-outline-variant">
-<span class="text-body-sm font-medium">v14.0.1 分析</span>
-<span class="text-label-sm text-on-surface-variant">3天前</span>
-</div>
-<div class="flex justify-between items-center p-sm hover:bg-surface-container-low rounded transition-colors cursor-pointer border border-transparent hover:border-outline-variant">
-<span class="text-body-sm font-medium">main 分支全量扫描</span>
-<span class="text-label-sm text-on-surface-variant">1周前</span>
-</div>
-<button class="w-full text-center text-primary text-label-sm font-label-sm mt-sm hover:underline">查看所有历史报告</button>
-</div>
-</div>
-</div>
-<!-- Right Column: Trends & Details -->
-<div class="col-span-12 xl:col-span-8 flex flex-col gap-gutter">
-<!-- Activity Trend -->
-<section class="bg-surface-container-lowest border border-outline-variant p-lg rounded-xl">
-<div class="flex flex-col sm:flex-row justify-between sm:items-center mb-lg gap-md">
-<h3 class="text-headline-sm font-headline-sm">提交活跃趋势</h3>
-<div class="flex items-center gap-md bg-surface-container-low px-md py-xs rounded-lg border border-outline-variant">
-<div class="text-right">
-<p class="text-[10px] uppercase text-on-surface-variant font-bold">最后提交</p>
-<p class="text-label-sm font-bold">2小时前 (main)</p>
-</div>
-<div class="h-6 w-px bg-outline-variant"></div>
-<div class="text-right">
-<p class="text-[10px] uppercase text-on-surface-variant font-bold">最新发布</p>
-<p class="text-label-sm font-bold">v14.1.0</p>
-</div>
-</div>
-</div>
-<div class="flex items-end gap-sm h-36 w-full px-md mb-xs">
-<div class="flex-1 bg-primary opacity-20 h-1/2 rounded-t hover:opacity-100 transition-opacity cursor-pointer"></div>
-<div class="flex-1 bg-primary opacity-30 h-2/3 rounded-t hover:opacity-100 transition-opacity cursor-pointer"></div>
-<div class="flex-1 bg-primary opacity-40 h-1/2 rounded-t hover:opacity-100 transition-opacity cursor-pointer"></div>
-<div class="flex-1 bg-primary opacity-20 h-1/3 rounded-t hover:opacity-100 transition-opacity cursor-pointer"></div>
-<div class="flex-1 bg-primary opacity-50 h-3/4 rounded-t hover:opacity-100 transition-opacity cursor-pointer"></div>
-<div class="flex-1 bg-primary opacity-80 h-full rounded-t hover:opacity-100 transition-opacity cursor-pointer"></div>
-<div class="flex-1 bg-primary h-[85%] rounded-t hover:opacity-100 transition-opacity cursor-pointer"></div>
-<div class="flex-1 bg-primary opacity-70 h-[92%] rounded-t hover:opacity-100 transition-opacity cursor-pointer"></div>
-<div class="flex-1 bg-primary opacity-40 h-1/2 rounded-t hover:opacity-100 transition-opacity cursor-pointer"></div>
-<div class="flex-1 bg-primary opacity-60 h-2/3 rounded-t hover:opacity-100 transition-opacity cursor-pointer"></div>
-<div class="flex-1 bg-primary opacity-90 h-[98%] rounded-t hover:opacity-100 transition-opacity cursor-pointer"></div>
-<div class="flex-1 bg-primary h-[94%] rounded-t hover:opacity-100 transition-opacity cursor-pointer"></div>
-</div>
-<div class="flex justify-between text-body-sm text-on-surface-variant">
-<span>12个月前</span>
-<span>当前</span>
-</div>
-</section>
-<!-- Grid for Code Dist & Community Health -->
-<div class="grid grid-cols-1 md:grid-cols-2 gap-gutter">
-<!-- Code Distribution -->
-<div class="bg-surface-container-lowest border border-outline-variant p-lg rounded-xl">
-<h3 class="text-headline-sm font-headline-sm mb-lg">代码语言分布</h3>
-<div class="flex w-full h-3 rounded-full overflow-hidden mb-lg shadow-inner">
-<div class="h-full bg-[#3178c6]" style="width: 92%"></div>
-<div class="h-full bg-[#f1e05a]" style="width: 5%"></div>
-<div class="h-full bg-outline-variant" style="width: 3%"></div>
-</div>
-<div class="grid grid-cols-1 gap-sm">
-<div class="flex items-center justify-between">
-<div class="flex items-center gap-sm">
-<span class="w-2 h-2 rounded-full bg-[#3178c6]"></span>
-<span class="text-label-md font-label-md">TypeScript</span>
-</div>
-<span class="text-label-md font-bold">92%</span>
-</div>
-<div class="flex items-center justify-between">
-<div class="flex items-center gap-sm">
-<span class="w-2 h-2 rounded-full bg-[#f1e05a]"></span>
-<span class="text-label-md font-label-md">JavaScript</span>
-</div>
-<span class="text-label-md font-bold">5%</span>
-</div>
-</div>
-</div>
-<!-- Community Health -->
-<div class="bg-surface-container-lowest border border-outline-variant p-lg rounded-xl">
-<h3 class="text-headline-sm font-headline-sm mb-lg">社区健康指标</h3>
-<div class="space-y-md">
-<div class="flex justify-between items-center">
-<span class="text-body-md text-on-surface-variant">Issue 关闭率</span>
-<div class="flex items-center gap-sm">
-<div class="w-16 h-1 bg-surface-container-high rounded-full overflow-hidden">
-<div class="h-full bg-secondary" style="width: 85%"></div>
-</div>
-<span class="text-label-md font-bold">85%</span>
-</div>
-</div>
-<div class="flex justify-between items-center">
-<span class="text-body-md text-on-surface-variant">平均 PR 合并时间</span>
-<span class="text-label-md font-bold text-secondary">~3天</span>
-</div>
-<div class="flex justify-between items-center">
-<span class="text-body-md text-on-surface-variant">核心贡献者</span>
-<span class="text-label-md font-bold">2,500+</span>
-</div>
-</div>
-</div>
-</div>
-<!-- Documentation Status -->
-<section class="bg-surface-container-lowest border border-outline-variant p-lg rounded-xl">
-<h3 class="text-headline-sm font-headline-sm mb-lg">项目文档完整度</h3>
-<div class="grid grid-cols-2 sm:grid-cols-4 gap-md">
-<div class="flex flex-col items-center gap-sm p-md bg-surface-container-low rounded-lg border border-outline-variant">
-<span class="material-symbols-outlined text-secondary text-lg" style="font-variation-settings: 'FILL' 1;">check_circle</span>
-<span class="text-label-sm font-bold">README</span>
-</div>
-<div class="flex flex-col items-center gap-sm p-md bg-surface-container-low rounded-lg border border-outline-variant">
-<span class="material-symbols-outlined text-secondary text-lg" style="font-variation-settings: 'FILL' 1;">check_circle</span>
-<span class="text-label-sm font-bold">LICENSE</span>
-</div>
-<div class="flex flex-col items-center gap-sm p-md bg-surface-container-low rounded-lg border border-outline-variant">
-<span class="material-symbols-outlined text-secondary text-lg" style="font-variation-settings: 'FILL' 1;">check_circle</span>
-<span class="text-label-sm font-bold">CONTRIB</span>
-</div>
-<div class="flex flex-col items-center gap-sm p-md bg-surface-container-low rounded-lg border border-outline-variant">
-<span class="material-symbols-outlined text-secondary text-lg" style="font-variation-settings: 'FILL' 1;">check_circle</span>
-<span class="text-label-sm font-bold">CHANGELOG</span>
-</div>
-</div>
-</section>
-</div>
-</div>
-</main>
-<footer class="mt-xl border-t border-outline-variant py-lg bg-surface">
-<div class="max-w-[1400px] mx-auto px-lg flex flex-col md:flex-row justify-between items-center gap-md">
-<p class="text-body-sm text-on-surface-variant">© 2024 RepoPulse AI - 专业开源库深度分析引擎</p>
-<div class="flex gap-lg">
-<a class="text-label-sm text-on-surface-variant hover:text-primary" href="#">隐私政策</a>
-<a class="text-label-sm text-on-surface-variant hover:text-primary" href="#">服务条款</a>
-<a class="text-label-sm text-on-surface-variant hover:text-primary" href="#">联系我们</a>
-</div>
-</div>
-</footer>
-<script>
-    // Simple micro-interactions
-    document.querySelectorAll('button, a').forEach(el => {
-        el.addEventListener('mousedown', () => el.style.transform = 'scale(0.97)');
-        el.addEventListener('mouseup', () => el.style.transform = 'scale(1)');
-        el.addEventListener('mouseleave', () => el.style.transform = 'scale(1)');
-    });
-</script>
-</body></html>
-3、模块拆解
-（1）基础模块
-模块 功能 优先级   
-URL 输入 用户输入 GitHub 仓库 URL P0 
-URL 解析 提取 owner 和 repo P0  
-GitHub API 拉取 获取仓库基础信息 P0  
-指标展示 Star、Fork、Issue、语言分布 P0  
-图表可视化 饼图、卡片、雷达图或柱状图 P0  
-AI 评分 调用大模型或本地规则生成评分 P1  
-报告展示 生成仓库体检报告 P1         
-（2）额外模块 
-模块 功能 价值   
-README 分析 读取 README 内容，判断文档质量 高  
-LICENSE 检测 判断是否有开源协议 中  
-Contributors 分析 展示主要贡献者 中  
-Commit 活跃度 展示近 30 天提交趋势 高 
- Issue 健康度 开放 Issue、关闭
- Issue、响应情况 高  
-AI 建议 给出改进建议 高  
-分享报告 生成可复制的 Markdown 报告 中
-4、评分模型设计
-AI 评分可以分两层：
-（1）规则评分
-先用规则算一个基础分，保证即使 AI API 不可用，也能展示评分。
-总分 100：
-维度	权重
-社区热度	25
-维护活跃度	25
-文档完整度	20
-工程规范	15
-生态成熟度	15
-（2）评分规则示例
-社区热度，25 分
-Stars > 10000：25
-Stars > 1000：20
-Stars > 100：12
-Stars <= 100：6
-维护活跃度，25 分
-最近 7 天有更新：25
-最近 30 天有更新：20
-最近 90 天有更新：12
-超过 180 天未更新：5
-文档完整度，20 分
-README 存在：8
-LICENSE 存在：4
-CONTRIBUTING 存在：4
-CHANGELOG 存在：4
-工程规范，15 分
-存在 package.json / pyproject.toml / go.mod：5
-存在测试目录或测试配置：5
-存在 CI 配置：5
-生态成熟度，15 分
-Release 数量多：5
-Contributor 数量多：5
-Topic 标签完善：5
-5、AI 评分提示词设计
-把 GitHub API 拉取到的数据整理成 JSON，然后让 AI 生成报告。
-提示词一：项目综合评分
+---
+
+## 一、项目定位
+
+**RepoScope** 是一款开源项目健康度体检工具。用户输入任意公开 GitHub 仓库 URL，系统自动聚合分析该仓库的各项指标，并以可视化仪表盘形式呈现。支持规则引擎和 AI 大模型双重评分。
+
+**核心价值**：帮助开发者在选用开源依赖前快速评估项目质量，降低"踩坑"风险。
+
+---
+
+## 二、需求分析
+
+### 2.1 核心功能
+
+| 模块 | 内容 |
+|---|---|
+| 基础信息 | 名称、描述、作者、创建时间、更新时间、仓库大小、默认分支 |
+| 热度指标 | Stars、Forks、Watchers、Open Issues |
+| 活跃度指标 | 最后推送时间、最新 Release、Contributors 数量 |
+| 代码结构 | 语言分布百分比条 + 图例 |
+| 社区健康度 | Issue 关闭率、PR 合并率、未关闭 Issue/PR 数量 |
+| 文档质量 | README / LICENSE / CONTRIBUTING / CHANGELOG 是否存在 |
+| 类别识别 | 23 种类别标签自动判定（Web 框架、AI/大模型、DevOps 等） |
+| 双评系统 | 规则引擎评分 + AI 模型评分，统一 100 分加权平均 |
+| 历史记录 | localStorage 持久化，最多 20 条，支持一键回看 |
+
+### 2.2 非功能需求
+
+- **配置持久化**：GitHub Token 和 AI API Key 均在前端配置，存入 `localStorage`，刷新不丢失
+- **离线可用**：即使不配置 AI，规则评分引擎始终可用
+- **速率保护**：无 Token 时请求节流（每批 3 个，间隔 2s），避免触发 GitHub 二级速率限制
+- **错误引导**：速率限制、Token 失效等错误均提供一键打开设置页面的引导链接
+
+---
+
+## 三、技术方案
+
+### 3.1 架构
+
+```
+浏览器 (SPA)                Express Server                外部 API
+┌──────────┐   /api/analyze  ┌──────────────┐   12+ 端点   ┌──────────┐
+│ 输入 URL ├────────────────→│ URL 解析      ├────────────→│ GitHub   │
+│ Dashboard│←────────────────│ 数据聚合      │←────────────│ REST API │
+│ 双评对比  │                │ 规则评分      │             └──────────┘
+│ 历史记录  │   /api/ai-score │              │             ┌──────────┐
+│ AI 配置  ├────────────────→│ AI 路由分发   ├────────────→│ OpenAI   │
+└──────────┘                │ 结果解析      │             │ DeepSeek │
+                            └──────────────┘             │ Kimi     │
+                                                         │ ...      │
+                                                         └──────────┘
+```
+
+### 3.2 技术选型
+
+| 层级 | 技术 | 选型理由 |
+|---|---|---|
+| 前端 | HTML + Vanilla JS + Tailwind CSS CDN | 零构建步骤，无框架依赖，直接部署 |
+| 图表 | Chart.js CDN | 轻量、无需构建 |
+| 后端 | Node.js + Express | 与前端同语言，GitHub API 代理 + AI 路由 |
+| HTTP 客户端 | node-fetch | 轻量，兼容 fetch API |
+| AI 对接 | OpenAI 兼容接口 + Anthropic 原生接口 | 覆盖 6 家厂商 |
+
+### 3.3 数据流
+
+```
+1. 用户输入 URL → 前端 POST /api/analyze { url, githubToken? }
+2. 后端解析 owner/repo → 分批节流拉取 7 个 GitHub API 端点
+3. 聚合数据 + 规则评分 + 类别判定 → 返回结构化 JSON
+4. 前端渲染仪表盘（双评行 + 维度卡 + 关键指标 + 语言分布 + 社区健康）
+5. 用户点击 "AI 评分" → POST /api/ai-score { repoData, provider, apiKey }
+6. 后端路由到对应厂商 → 注入提示词 → 解析返回 → 更新评分行
+```
+
+---
+
+## 四、模块设计
+
+### 4.1 后端模块
+
+| 模块 | 位置 | 职责 |
+|---|---|---|
+| URL 解析 | `server.js:parseRepoUrl()` | 从 URL 提取 owner/repo |
+| GitHub 请求 | `server.js:githubFetch()` | 统一认证、错误处理、速率检测 |
+| 请求节流 | `server.js:throttledFetchAll()` | 分批并发 + 批次间隔 |
+| 类别判定 | `server.js:detectCategory()` | 23 类别 × 150+ 关键词匹配 |
+| 规则评分 | `server.js:ruleBasedScore()` | 5 维度加权平均 + 明细 breakdown |
+| AI 路由 | `server.js:callAI()` | OpenAI 兼容 / Anthropic 双协议 |
+| 提示词 | `server.js:buildScoringPrompt()` | AI 评分的系统提示词 |
+
+### 4.2 前端模块
+
+| 模块 | 功能 |
+|---|---|
+| 输入视图 (`#inputView`) | URL 输入框 + 历史记录列表 |
+| 仪表盘视图 (`#dashboardView`) | 评分行 + 维度卡 + 指标卡片 + 语言分布 + 社区健康 |
+| 设置弹窗 (`#settingsModal`) | GitHub Token / AI 模型双标签配置 |
+| 历史记录 | `saveToHistory()` / `renderHistory()` / localStorage 持久化 |
+| 类别标签 | 彩色图标标签，渲染在仓库名右侧 |
+| 评分明细 | `renderDimensionScores()` + `toggleDimDetail()` 点击展开 |
+
+---
+
+## 五、评分算法
+
+### 5.1 设计原则
+
+两套评分共用**相同的维度和权重**，总分 = 各维度 × 权重的加权平均，统一 100 分制，确保可对比。
+
+### 5.2 维度与权重
+
+| 维度 | 权重 | 规则引擎评估方式 | AI 评估方式 |
+|---|---|---|---|
+| 社区热度 | 25% | Stars 对数映射 (log₁₀×25)，10k 星满分 | 综合 Star/Fork/Watch/Topic |
+| 维护活跃度 | 25% | 最后推送天数线性衰减 (100-days×100/365) | 更新时间、提交频率、Release 频率 |
+| 文档完整度 | 20% | README(40)+LICENSE(25)+CONTRIBUTING(20)+CHANGELOG(15) | 文档存在性及质量 |
+| 工程规范 | 15% | 依赖文件(40)+测试目录(30)+CI 配置(30) | 目录结构、CI、测试、依赖管理 |
+| 可持续性 | 15% | Releases(40%)+Contributors(35%)+Topics(25%) | 贡献者、Issue 处理、PR 活跃度 |
+
+**等级阈值**：≥85 优秀 / ≥70 良好 / ≥50 一般 / <50 风险较高
+
+### 5.3 规则评分演进
+
+| 版本 | 算法 | 问题 |
+|---|---|---|
+| v1 | 绝对阈值叠加（Stars>10k=25, Stars>1k=20...） | 各维度子分数范围不统一（有的 25 分满分，有的 15 分满分），无法与 AI 评分对比 |
+| v2（当前） | 每维度 0-100 分，加权平均 | 与 AI 评分尺度一致，可直接对比维度差异 |
+
+### 5.4 评分明细（Breakdown）
+
+每个维度均可点击展开评分明细，包含：
+- **规则评分**：详细计算公式 + 数据依据 + 缺失项标注（✅/❌/⚠️/🔴）
+- **AI 评分**：AI 返回的结构化说明（如缺失则从 strengths/risks/suggestions 自动构造）
+
+---
+
+## 六、AI 提示词设计
+
+### 6.1 项目综合评分 Prompt（最终版本）
+
+```
 你是一个资深开源项目评估专家。请根据下面的 GitHub 仓库数据，对该项目进行健康度评估。
-请从以下维度评分：
-1. 社区热度：Star、Fork、Watch、Topic
-2. 维护活跃度：最近更新时间、提交频率、Release 情况
-3. 文档完整度：README、LICENSE、CONTRIBUTING、CHANGELOG
-4. 工程规范：目录结构、CI、测试、依赖管理
-5. 可持续性：贡献者数量、Issue 状态、PR 活跃度
-请输出 JSON，格式如下：
+
+请从以下维度评分（每个维度 0-100 分），总分按加权平均计算：
+1. 社区热度（权重 25%）：Star、Fork、Watch、Topic 数量
+2. 维护活跃度（权重 25%）：最近更新时间、提交频率、Release 频率
+3. 文档完整度（权重 20%）：README、LICENSE、CONTRIBUTING、CHANGELOG 是否存在及质量
+4. 工程规范（权重 15%）：目录结构规范性、CI 配置、测试覆盖、依赖管理
+5. 可持续性（权重 15%）：贡献者数量、Issue 处理情况、PR 活跃度、生态成熟度
+
+总分 = popularity×0.25 + activity×0.25 + documentation×0.20 + engineering×0.15 + sustainability×0.15
+
+请输出纯 JSON（不要包含 markdown 代码块标记），格式如下：
 {
   "totalScore": 0,
   "level": "优秀 / 良好 / 一般 / 风险较高",
-  "scores": {
-    "popularity": 0,
-    "activity": 0,
-    "documentation": 0,
-    "engineering": 0,
-    "sustainability": 0
-  },
+  "scores": { "popularity": 0, "activity": 0, "documentation": 0, "engineering": 0, "sustainability": 0 },
   "summary": "一句话总结项目健康状态",
   "strengths": ["优势1", "优势2", "优势3"],
   "risks": ["风险1", "风险2"],
-  "suggestions": ["建议1", "建议2", "建议3"]
+  "suggestions": ["建议1", "建议2", "建议3"],
+  "breakdown": {
+    "popularity": ["数据依据：Stars N，Forks N", "评分理由：...", "结论：✅/📌/⚠️/🔴 ..."],
+    "activity": ["数据依据：最后推送 N 天前", "评分理由：...", "结论：✅/📌/⚠️/🔴 ..."],
+    "documentation": ["数据依据：README=是/否，LICENSE=是/否", "评分理由：...", "结论：..."],
+    "engineering": ["数据依据：package=是/否，tests=是/否，CI=是/否", "评分理由：...", "结论：..."],
+    "sustainability": ["数据依据：Releases N，Contributors N，Topics N", "评分理由：...", "结论：..."]
+  }
 }
+
+注意：breakdown 中每个维度的数组最多 5 行，每条以 ✅(优势) / ❌(缺陷) / 📌(中性) / ⚠️(风险) / 🔴(严重风险) 开头。
+
 仓库数据如下：
 {{repoData}}
-提示词二：README 文档质量分析
-你是一个开源项目文档审查专家。请分析下面的 README 内容，判断它是否适合开发者快速理解和使用该项目。
-请从以下方面分析：
-1. 项目介绍是否清晰
-2. 是否有安装指南
-3. 是否有快速开始示例
-4. 是否有 API 或使用文档
-5. 是否说明贡献方式
-6. 是否说明许可证
-7. 是否适合新手上手
-请输出 JSON：
-{
-  "readmeScore": 0,
-  "summary": "文档质量总结",
-  "missingParts": ["缺失内容1", "缺失内容2"],
-  "goodParts": ["优秀点1", "优秀点2"],
-  "improvementSuggestions": ["改进建议1", "改进建议2"]
-}
-README 内容：
-{{readmeContent}}
-提示词三：生成用户可读报告
-你是一个技术产品分析助手。请基于以下 GitHub 仓库分析数据，生成一份面向开发者的中文体检报告。
+```
 
-要求：
-- 语言简洁专业
-- 不要堆砌原始数据
-- 重点解释这些数据意味着什么
-- 给出明确结论和改进建议
-- 报告适合展示在 Web 页面中
+### 6.2 Prompt 设计要点
 
-报告结构：
-1. 项目概览
-2. 核心指标解读
-3. 项目优势
-4. 潜在风险
-5. 改进建议
-6. 综合结论
+| 要素 | 说明 |
+|---|---|
+| 角色设定 | "资深开源项目评估专家" - 设定专业领域 |
+| 明确权重 | 在 Prompt 中显式给出公式，确保 AI 总分计算与规则引擎一致 |
+| 结构化输出 | 要求纯 JSON（无 markdown 包裹），减少解析出错 |
+| 枚举约束 | level 限定为 4 个等级、breakdown 限定每维度 ≤5 行 |
+| 图标标记 | ✅/❌/📌/⚠️/🔴 作为每条明细的前缀，前端可直接按色渲染 |
+| 数据注入 | `{{repoData}}` 为后端聚合后的完整 JSON，包含所有维度的客观数据 |
 
-数据：
-{{analysisData}}
+### 6.3 多厂商兼容
+
+后端实现了统一的 `callAI()` 分发器，OpenAI / DeepSeek / Kimi / 豆包 / Qwen 使用 **OpenAI 兼容协议**（`/v1/chat/completions`），Claude 使用 **Anthropic 原生协议**（`/v1/messages`）。同一套 Prompt 可适配所有厂商。
+
+---
+
+## 七、类别识别
+
+### 7.1 算法
+
+基于 **关键词匹配 + 加权打分**，扫描仓库的 `topics` / `description` / `language` / `name` / 目录结构：
+
+```
+fullText = description + topics + language + name + dirNames
+for each category:
+    for each keyword:
+        exact match (+5) + partial match (+1)
+return top-scoring category
+```
+
+### 7.2 类别列表（23 类）
+
+AI/大模型、机器学习/深度学习、Web 框架、前端组件库、CLI 工具、数据库/存储、DevOps/CI-CD、API/后端服务、移动开发、桌面应用、编程语言/编译器、测试框架、文档/静态站点、数据科学/分析、安全工具、游戏引擎/开发、构建工具/打包器、编辑器/IDE、网络/协议、消息队列/事件、监控/可观测性、工具库/SDK、操作系统/底层
+
+---
+
+## 八、实现过程中的问题与解决
+
+| # | 问题 | 解决方案 |
+|---|---|---|
+| 1 | GitHub API 无 Token 仅 60次/小时，13 并行请求瞬间耗尽 | 减少到 7 次（合并 state=all、复用目录列表检测文档）+ 分批节流（每批 3 个，间隔 2s） |
+| 2 | `github_pat_` 前缀的 fine-grained token 认证格式差异 | 统一使用 `Authorization: token xxx` 格式（GitHub REST API 兼容） |
+| 3 | 前端刷新后配置丢失 | GitHub Token + AI 配置存入 `localStorage`，启动时自动恢复 |
+| 4 | 规则评分和 AI 评分数值不可对比 | 统一为 0-100 分加权平均，每维度独立打分，总分为维度分×权重 |
+| 5 | 低分维度用户不理解原因 | 添加 breakdown 字段，每维度可点击展开详细计算过程 |
+| 6 | AI 返回 JSON 可能包裹在 markdown 代码块中 | `parseAIResponse()` 正则提取 ` ```json ... ``` ` 块再解析 |
+| 7 | 速率限制错误缺少操作引导 | 错误消息带 `github_rate_limit||` 前缀，前端识别后渲染带链接的引导文案 |
+
+---
+
+## 九、后续可优化方向
+
+### 9.1 功能增强
+
+- [ ] **Commit 活跃趋势图**：拉取近 12 个月提交统计，绘制柱状图
+- [ ] **Issue / PR 趋势**：Issue 响应时间、PR 合并时间趋势分析
+- [ ] **README 内容分析**：调用 AI 对 README 内容质量做深度分析（已有 Prompt 模板）
+- [ ] **贡献者排行**：展示 Top 贡献者及其贡献量
+- [ ] **依赖分析**：解析 package.json / go.mod 等，展示依赖树与版本信息
+- [ ] **分享报告**：生成可分享的 Markdown / 图片报告
+- [ ] **批量对比**：同时分析多个仓库并横向对比
+- [ ] **组织分析**：输入 GitHub 组织名，批量分析下所有仓库
+- [ ] **暗色模式**：支持 light/dark 主题切换
+- [ ] **多语言支持**：中英文界面切换
+
+### 9.2 性能优化
+
+- [ ] **服务端缓存**：相同仓库 N 分钟内复用缓存结果，减少 API 调用
+- [ ] **浏览器端 IndexedDB**：完整分析结果持久化，离线可查看历史报告
+- [ ] **增量更新**：分析过仓库后，仅拉取增量数据（用 ETag / If-Modified-Since）
+- [ ] **Web Worker**：将规则评分和类别识别移到前端 Worker 线程
+
+### 9.3 评分优化
+
+- [ ] **规则评分引入 Fork 和 Watch 数据**：当前仅用 Stars 代表社区热度
+- [ ] **OpenRank 指数集成**：引用开源项目的标准化影响力指标
+- [ ] **安全评分维度**：检测依赖漏洞、不安全配置等
+- [ ] **许可证合规评分**：检测许可证兼容性
+- [ ] **多 AI 评分取平均**：同时调用多个模型，展示评分分布
+
+### 9.4 工程化
+
+- [ ] **打包工具**：引入 Vite 构建，优化 Tailwind 按需编译
+- [ ] **前端框架迁移**：考虑 React/Vue 重写以支持更好的组件复用
+- [ ] **API 限流**：后端添加请求频率限制中间件
+- [ ] **单元测试**：规则评分引擎和类别识别函数的测试覆盖
+- [ ] **TypeScript 迁移**：前后端类型安全
+- [ ] **GitHub OAuth 登录**：用户登录后直接使用 GitHub Token，无需手动配置
+
+---
+
+## 十、前端原型设计参考
+
+早期使用设计工具生成了 HTML 原型（`RepoPulse AI`），包含 SVG 环形仪表盘、Tailwind CSS 主题色彩系统、Material Symbols 图标等设计语言。最终实现保留了原型的视觉基调（蓝绿配色、JetBrains Mono 等宽字体、圆角卡片），但将静态原型改造为动态 SPA。
