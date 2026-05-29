@@ -1,0 +1,1099 @@
+<!DOCTYPE html>
+<html class="light" lang="zh-CN">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>RepoScope - GitHub 仓库健康度体检</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<style>
+  .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+  .gauge-container { position: relative; width: 140px; height: 140px; }
+  .gauge-svg { transform: rotate(-90deg); }
+  .gauge-bg { fill: none; stroke: #e0e2e9; stroke-width: 12; }
+  .gauge-fg { fill: none; stroke-width: 12; stroke-linecap: round; transition: stroke-dashoffset 1s ease-in-out; }
+  .loading-spinner { animation: spin 1s linear infinite; }
+  @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+  .fade-in { animation: fadeIn 0.4s ease-out; }
+
+  /* Modal overlay */
+  .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 100; align-items: center; justify-content: center; }
+  .modal-overlay.active { display: flex; }
+  .modal-panel { background: #fff; border-radius: 1rem; max-width: 480px; width: 90%; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.15); animation: fadeIn 0.2s ease-out; }
+</style>
+<script id="tailwind-config">
+tailwind.config = {
+  darkMode: "class",
+  theme: {
+    extend: {
+      colors: {
+        "surface": "#f7f9ff",
+        "surface-container-low": "#f1f4fa",
+        "surface-container-lowest": "#ffffff",
+        "surface-container": "#ebeef5",
+        "surface-container-high": "#e5e8ef",
+        "surface-container-highest": "#e0e2e9",
+        "background": "#f7f9ff",
+        "primary": "#0051ae",
+        "primary-container": "#0969da",
+        "secondary": "#006e2c",
+        "secondary-container": "#88fb99",
+        "tertiary": "#923800",
+        "error": "#ba1a1a",
+        "error-container": "#ffdad6",
+        "on-background": "#181c21",
+        "on-surface": "#181c21",
+        "on-surface-variant": "#424753",
+        "on-primary": "#ffffff",
+        "on-secondary": "#ffffff",
+        "on-secondary-container": "#00742f",
+        "on-tertiary": "#ffffff",
+        "outline": "#727785",
+        "outline-variant": "#c2c6d6",
+      },
+      borderRadius: {
+        DEFAULT: "0.125rem", lg: "0.25rem", xl: "0.5rem", full: "0.75rem"
+      },
+      fontFamily: {
+        "body": ["Inter"], "label": ["JetBrains Mono"]
+      }
+    }
+  }
+}
+</script>
+</head>
+<body class="bg-background text-on-background min-h-screen">
+
+<!-- ===== 顶部导航 ===== -->
+<header class="sticky top-0 w-full flex justify-between items-center px-4 md:px-6 h-16 z-50 bg-surface border-b border-outline-variant shadow-sm">
+  <div class="flex items-center gap-6">
+    <span class="text-xl font-bold text-primary font-label cursor-pointer" onclick="resetApp()">RepoScope</span>
+    <span class="hidden sm:block text-sm text-on-surface-variant font-label">GitHub 仓库健康度体检仪表盘</span>
+  </div>
+  <div class="flex items-center gap-3">
+    <button onclick="resetApp()" class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-outline-variant text-sm text-on-surface-variant hover:bg-surface-container-low hover:border-primary transition-all font-label">
+      <span class="material-symbols-outlined text-base">add</span>
+      新分析
+    </button>
+    <button id="btnSettings" onclick="toggleSettings()" class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-outline-variant text-sm text-on-surface-variant hover:bg-surface-container-low hover:border-primary transition-all font-label">
+      <span class="material-symbols-outlined text-base">settings</span>
+      <span id="settingsBadge">设置</span>
+    </button>
+  </div>
+</header>
+
+<!-- ===== 主内容 ===== -->
+<main class="max-w-[1400px] mx-auto p-4 md:p-6 lg:px-8">
+
+  <!-- ====== 输入视图 ====== -->
+  <div id="inputView" class="fade-in">
+    <div class="max-w-2xl mx-auto mt-16 md:mt-24 text-center">
+      <div class="mb-6">
+        <span class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary-container/10 text-primary text-xs font-label font-bold mb-4">
+          <span class="material-symbols-outlined text-sm">monitoring</span> 开源项目健康度体检
+        </span>
+      </div>
+      <h1 class="text-3xl md:text-4xl font-bold text-on-surface mb-3">检测任何 GitHub 仓库的健康状况</h1>
+      <p class="text-on-surface-variant text-base md:text-lg mb-8 max-w-lg mx-auto">输入公开仓库 URL，一键获取 Star、Fork、活跃度、语言分布、社区健康度等核心指标</p>
+
+      <div class="relative">
+        <div class="flex items-center bg-surface-container-lowest border-2 border-outline-variant rounded-2xl p-1.5 focus-within:border-primary transition-all shadow-sm hover:shadow-md">
+          <span class="material-symbols-outlined text-on-surface-variant ml-3">link</span>
+          <input id="repoUrlInput" type="text" placeholder="https://github.com/vercel/next.js"
+                 class="flex-1 bg-transparent border-none outline-none px-3 py-3 text-base font-label text-on-surface placeholder:text-outline"
+                 autocomplete="off" spellcheck="false"/>
+          <button id="btnAnalyze" onclick="startAnalysis()" class="bg-primary text-on-primary px-6 py-3 rounded-xl font-label text-sm font-bold hover:opacity-90 transition-all flex items-center gap-2 whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed">
+            <span class="material-symbols-outlined text-base">search</span>
+            开始分析
+          </button>
+        </div>
+        <p class="text-xs text-on-surface-variant mt-2 text-left ml-2">支持任意公开仓库，例如 vercel/next.js、facebook/react</p>
+      </div>
+
+      <div class="mt-4 flex justify-center">
+        <button onclick="toggleSettings()" class="inline-flex items-center gap-1.5 text-sm text-primary hover:underline font-label">
+          <span class="material-symbols-outlined text-base">tune</span> 打开设置（GitHub Token / AI 模型）
+        </button>
+      </div>
+
+      <!-- 历史记录 -->
+      <div id="historySection" class="hidden max-w-2xl mx-auto mt-12 text-left">
+        <h3 class="text-base font-bold text-on-surface mb-4 flex items-center gap-2">
+          <span class="material-symbols-outlined text-primary">history</span> 历史分析记录
+        </h3>
+        <div id="historyList" class="space-y-2"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ====== 加载视图 ====== -->
+  <div id="loadingView" class="hidden text-center py-24 fade-in">
+    <div class="inline-flex items-center justify-center w-16 h-16 rounded-full bg-surface-container mb-4">
+      <span class="material-symbols-outlined loading-spinner text-3xl text-primary">progress_activity</span>
+    </div>
+    <p class="text-lg font-bold text-on-surface mb-1">正在分析仓库...</p>
+    <p class="text-sm text-on-surface-variant">正在从 GitHub 拉取数据，请稍候</p>
+  </div>
+
+  <!-- ====== 错误视图 ====== -->
+  <div id="errorView" class="hidden text-center py-24 fade-in">
+    <div class="inline-flex items-center justify-center w-16 h-16 rounded-full bg-error-container mb-4">
+      <span class="material-symbols-outlined text-3xl text-error">error</span>
+    </div>
+    <p class="text-lg font-bold text-on-surface mb-1" id="errorTitle">分析失败</p>
+    <p class="text-sm text-on-surface-variant mb-6" id="errorDetail"></p>
+    <button onclick="resetApp()" class="bg-primary text-on-primary px-6 py-2 rounded-xl font-label text-sm hover:opacity-90 transition-all">重新输入</button>
+  </div>
+
+  <!-- ====== 仪表盘视图（基于原型，动态数据） ====== -->
+  <div id="dashboardView" class="hidden fade-in">
+    <!-- 仓库头 -->
+    <section class="mb-4 flex flex-col md:flex-row md:items-end justify-between gap-4 border-b border-outline-variant pb-4">
+      <div>
+        <div class="flex items-center gap-1.5 text-on-surface-variant mb-1 flex-wrap">
+          <img id="dashAvatar" class="w-5 h-5 rounded-full" src="" alt=""/>
+          <span id="dashOwner" class="text-sm"></span>
+          <span class="material-symbols-outlined text-sm">chevron_right</span>
+          <span id="dashName" class="text-base text-on-surface font-bold"></span>
+          <span class="bg-secondary-container text-on-secondary-container px-2 py-0.5 rounded text-xs font-label ml-1">Public</span>
+          <span id="dashCategory" class="px-2 py-0.5 rounded text-xs font-label ml-1 text-white hidden"></span>
+          <a id="dashGithubLink" href="#" target="_blank" class="material-symbols-outlined text-on-surface-variant hover:text-primary transition-colors text-lg ml-1" title="在 GitHub 中打开">open_in_new</a>
+        </div>
+        <p id="dashDesc" class="text-on-surface-variant text-sm max-w-3xl mt-1"></p>
+      </div>
+      <div class="flex gap-2">
+        <button onclick="startAnalysis()" class="bg-primary text-on-primary px-4 py-2 rounded-lg font-label text-sm hover:opacity-90 transition-all flex items-center gap-1.5">
+          <span class="material-symbols-outlined text-base">refresh</span> 重新分析
+        </button>
+        <button onclick="handleAiScore()" id="btnAiScore" class="border-2 border-primary text-primary px-4 py-2 rounded-lg font-label text-sm hover:bg-primary hover:text-on-primary transition-all flex items-center gap-1.5">
+          <span class="material-symbols-outlined text-base">smart_toy</span>
+          评分
+        </button>
+      </div>
+    </section>
+
+    <!-- 主网格 -->
+    <div class="grid grid-cols-12 gap-3">
+      <!-- 左列：评分 + 指标 -->
+      <div class="col-span-12 xl:col-span-4 flex flex-col gap-3">
+        <!-- 健康评分 -->
+        <div id="scoreCard" class="bg-surface-container-lowest border border-outline-variant p-4 rounded-xl flex flex-col items-center">
+          <div class="w-full flex justify-between items-center mb-3">
+            <h3 class="text-base font-bold">健康评分</h3>
+            <span class="material-symbols-outlined text-on-surface-variant text-sm cursor-help" onclick="toggleScoreInfo()" title="点击了解评分原则">info</span>
+          </div>
+
+          <!-- 评分信息提示 -->
+          <div id="scoreInfoTip" class="hidden w-full bg-surface-container-low rounded-lg p-2 mb-3 text-[10px] text-on-surface-variant leading-relaxed border border-outline-variant">
+            <b>规则评分</b>：基于 Stars、更新频率、文档完整度、CI/测试、贡献者等客观指标打分（100 分制）<br/>
+            <b>AI 评分</b>：调用大模型综合分析项目热度、维护活跃度、工程规范、可持续性（需配置 API）
+          </div>
+
+          <!-- 规则评分行 -->
+          <div class="w-full flex items-center justify-between mb-2">
+            <div class="flex items-center gap-1.5">
+              <span class="w-1.5 h-1.5 rounded-full" id="ruleDot" style="background:#727785"></span>
+              <span class="text-[11px] font-bold text-on-surface-variant font-label">规则引擎</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <span id="ruleScoreVal" class="text-lg font-bold font-label text-on-surface">--</span>
+              <span id="ruleScoreLvl" class="text-[10px] font-label bg-surface-container-high px-1.5 py-0.5 rounded">等待分析</span>
+            </div>
+          </div>
+
+          <!-- 分隔线 -->
+          <div class="w-full border-t border-outline-variant mb-2"></div>
+
+          <!-- AI 评分行 -->
+          <div id="aiScoreRow" class="w-full flex items-center justify-between mb-2">
+            <div class="flex items-center gap-1.5">
+              <span class="w-1.5 h-1.5 rounded-full bg-outline" id="aiDot"></span>
+              <span class="text-[11px] font-bold text-on-surface-variant font-label">AI 模型</span>
+            </div>
+            <div id="aiScorePending" class="flex items-center gap-1 text-[10px] text-outline font-label">
+              <span class="material-symbols-outlined text-xs">smart_toy</span> 点击右上角「评分」
+            </div>
+            <div id="aiScoreResult" class="hidden items-center gap-2">
+              <span id="aiScoreVal" class="text-lg font-bold font-label text-on-surface">--</span>
+              <span id="aiScoreLvl" class="text-[10px] font-label bg-surface-container-high px-1.5 py-0.5 rounded">--</span>
+            </div>
+          </div>
+
+          <!-- 汇总评语 -->
+          <p id="scoreSummary" class="text-xs text-on-surface-variant text-center px-2 mt-1 hidden"></p>
+        </div>
+
+        <!-- 评分维度对比 -->
+        <div id="dimensionScores" class="hidden bg-surface-container-lowest border border-outline-variant p-4 rounded-xl">
+          <h3 class="text-sm font-bold mb-3 text-on-surface flex items-center justify-between">
+            评分维度
+            <span id="dimSourceLabel" class="text-[10px] text-outline font-label font-normal"></span>
+          </h3>
+          <div class="space-y-2" id="dimensionBars"></div>
+          <div id="dimCompareToggle" class="hidden mt-3 pt-2 border-t border-outline-variant flex gap-2">
+            <button onclick="showDimRule()" id="btnDimRule" class="flex-1 text-[10px] py-1 rounded font-label font-bold bg-primary-container/10 text-primary">规则引擎</button>
+            <button onclick="showDimAi()" id="btnDimAi" class="flex-1 text-[10px] py-1 rounded font-label border border-outline-variant text-on-surface-variant">AI 模型</button>
+          </div>
+        </div>
+
+        <!-- 关键指标 -->
+        <div class="grid grid-cols-2 gap-2">
+          <div class="bg-surface-container-low border border-outline-variant p-3 rounded-xl">
+            <div class="flex items-center gap-1 text-on-surface-variant mb-0.5">
+              <span class="material-symbols-outlined text-sm">star</span>
+              <span class="text-xs font-label">Star</span>
+            </div>
+            <span id="metricStars" class="text-lg font-bold">--</span>
+          </div>
+          <div class="bg-surface-container-low border border-outline-variant p-3 rounded-xl">
+            <div class="flex items-center gap-1 text-on-surface-variant mb-0.5">
+              <span class="material-symbols-outlined text-sm">fork_left</span>
+              <span class="text-xs font-label">Fork</span>
+            </div>
+            <span id="metricForks" class="text-lg font-bold">--</span>
+          </div>
+          <div class="bg-surface-container-low border border-outline-variant p-3 rounded-xl">
+            <div class="flex items-center gap-1 text-on-surface-variant mb-0.5">
+              <span class="material-symbols-outlined text-sm">visibility</span>
+              <span class="text-xs font-label">Watch</span>
+            </div>
+            <span id="metricWatch" class="text-lg font-bold">--</span>
+          </div>
+          <div class="bg-surface-container-low border border-outline-variant p-3 rounded-xl">
+            <div class="flex items-center gap-1 text-on-surface-variant mb-0.5">
+              <span class="material-symbols-outlined text-sm">bug_report</span>
+              <span class="text-xs font-label">Issue</span>
+            </div>
+            <span id="metricIssues" class="text-lg font-bold">--</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 右列：图表 + 详情 -->
+      <div class="col-span-12 xl:col-span-8 flex flex-col gap-3">
+        <!-- 趋势面板 -->
+        <section class="bg-surface-container-lowest border border-outline-variant p-4 rounded-xl">
+          <div class="flex flex-col sm:flex-row justify-between sm:items-center mb-4 gap-3">
+            <h3 class="text-base font-bold">统计面板</h3>
+            <div class="flex items-center gap-3 bg-surface-container-low px-3 py-1 rounded-lg border border-outline-variant text-sm">
+              <div class="text-right">
+                <p class="text-[10px] uppercase text-on-surface-variant font-bold">最后推送</p>
+                <p id="infoLastPush" class="text-xs font-bold font-label">--</p>
+              </div>
+              <div class="h-5 w-px bg-outline-variant"></div>
+              <div class="text-right">
+                <p class="text-[10px] uppercase text-on-surface-variant font-bold">最新发布</p>
+                <p id="infoLastRelease" class="text-xs font-bold font-label">--</p>
+              </div>
+              <div class="h-5 w-px bg-outline-variant"></div>
+              <div class="text-right">
+                <p class="text-[10px] uppercase text-on-surface-variant font-bold">Contributors</p>
+                <p id="infoContributors" class="text-xs font-bold font-label">--</p>
+              </div>
+            </div>
+          </div>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div>
+              <p class="text-xs text-on-surface-variant mb-2 font-label">语言分布</p>
+              <div class="w-full h-3 rounded-full overflow-hidden mb-3 shadow-inner flex" id="langBar"></div>
+              <div class="space-y-1.5" id="langLegend"></div>
+            </div>
+            <div>
+              <p class="text-xs text-on-surface-variant mb-2 font-label">仓库基本信息</p>
+              <div class="space-y-1.5 text-sm">
+                <div class="flex justify-between"><span class="text-on-surface-variant">创建时间</span><span id="infoCreated" class="font-label text-xs">--</span></div>
+                <div class="flex justify-between"><span class="text-on-surface-variant">默认分支</span><span id="infoBranch" class="font-label text-xs">--</span></div>
+                <div class="flex justify-between"><span class="text-on-surface-variant">许可证</span><span id="infoLicense" class="font-label text-xs">--</span></div>
+                <div class="flex justify-between"><span class="text-on-surface-variant">仓库大小</span><span id="infoSize" class="font-label text-xs">--</span></div>
+                <div class="flex justify-between"><span class="text-on-surface-variant">Topics</span><span id="infoTopics" class="font-label text-xs text-right max-w-[200px] truncate">--</span></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 社区健康 + 文档 -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <!-- 社区健康 -->
+          <div class="bg-surface-container-lowest border border-outline-variant p-4 rounded-xl">
+            <h3 class="text-base font-bold mb-4">社区健康指标</h3>
+            <div class="space-y-3">
+              <div class="flex justify-between items-center">
+                <span class="text-sm text-on-surface-variant">Issue 关闭率</span>
+                <div class="flex items-center gap-2">
+                  <div class="w-16 h-1.5 bg-surface-container-high rounded-full overflow-hidden">
+                    <div id="barIssueClose" class="h-full bg-secondary rounded-full" style="width:0%"></div>
+                  </div>
+                  <span id="valIssueClose" class="text-sm font-bold font-label">0%</span>
+                </div>
+              </div>
+              <div class="flex justify-between items-center">
+                <span class="text-sm text-on-surface-variant">PR 合并率</span>
+                <span id="valPRMerge" class="text-sm font-bold font-label text-secondary">--</span>
+              </div>
+              <div class="flex justify-between items-center">
+                <span class="text-sm text-on-surface-variant">未关闭 Issue</span>
+                <span id="valOpenIssues" class="text-sm font-bold font-label">--</span>
+              </div>
+              <div class="flex justify-between items-center">
+                <span class="text-sm text-on-surface-variant">未关闭 PR</span>
+                <span id="valOpenPRs" class="text-sm font-bold font-label">--</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 文档完整度 -->
+          <div class="bg-surface-container-lowest border border-outline-variant p-4 rounded-xl">
+            <h3 class="text-base font-bold mb-4">项目文档完整度</h3>
+            <div class="grid grid-cols-2 gap-2" id="docsGrid"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<!-- ====== 设置弹窗 (GitHub Token + AI 模型) ====== -->
+<div class="modal-overlay" id="settingsModal">
+  <div class="modal-panel p-6">
+    <div class="flex justify-between items-center mb-5">
+      <h2 class="text-lg font-bold flex items-center gap-2">
+        <span class="material-symbols-outlined text-primary">settings</span> 设置
+      </h2>
+      <button onclick="toggleSettings()" class="material-symbols-outlined text-on-surface-variant hover:text-on-surface">close</button>
+    </div>
+
+    <!-- Tab 切换 -->
+    <div class="flex border-b border-outline-variant mb-4">
+      <button id="tabGithub" onclick="switchSettingsTab('github')" class="flex-1 pb-2 text-sm font-bold border-b-2 transition-colors border-primary text-primary font-label">GitHub Token</button>
+      <button id="tabAi" onclick="switchSettingsTab('ai')" class="flex-1 pb-2 text-sm font-bold border-b-2 transition-colors border-transparent text-on-surface-variant font-label">AI 模型</button>
+    </div>
+
+    <!-- GitHub Token Tab -->
+    <div id="panelGithub" class="space-y-4">
+      <div class="flex items-center gap-2 mb-1">
+        <span id="ghTokenStatus" class="w-2 h-2 rounded-full bg-outline"></span>
+        <span id="ghTokenLabel" class="text-xs text-on-surface-variant font-label">未配置 · 额度 60次/小时</span>
+      </div>
+      <div>
+        <label for="ghTokenInput" class="text-sm font-bold text-on-surface mb-1.5 block">GitHub Personal Access Token</label>
+        <div class="relative">
+          <input id="ghTokenInput" type="password" placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
+                 class="w-full border border-outline-variant rounded-lg px-3 py-2.5 pr-10 text-sm bg-surface-container-lowest focus:border-primary focus:outline-none font-label"
+                 autocomplete="off"/>
+          <button onclick="toggleGhTokenVisibility()" class="absolute right-2 top-1/2 -translate-y-1/2 material-symbols-outlined text-on-surface-variant text-base hover:text-primary">visibility</button>
+        </div>
+        <p class="text-[10px] text-on-surface-variant mt-1">Token 仅保存在浏览器本地，通过 API 请求发送至本站后端</p>
+      </div>
+
+      <!-- 获取 Token 教程（可折叠） -->
+      <details class="bg-surface-container-low rounded-lg p-3 text-xs border border-outline-variant">
+        <summary class="font-bold text-on-surface cursor-pointer font-label">如何获取 GitHub Token？</summary>
+        <div class="mt-3 space-y-2 text-on-surface-variant">
+          <div class="flex items-start gap-2">
+            <span class="font-bold text-primary whitespace-nowrap">1.</span>
+            <span>打开 <a href="https://github.com/settings/tokens" target="_blank" class="text-primary underline">GitHub Settings → Developer settings → Personal access tokens → Tokens (classic)</a></span>
+          </div>
+          <div class="flex items-start gap-2">
+            <span class="font-bold text-primary whitespace-nowrap">2.</span>
+            <span>点击 <b>Generate new token (classic)</b></span>
+          </div>
+          <div class="flex items-start gap-2">
+            <span class="font-bold text-primary whitespace-nowrap">3.</span>
+            <span>Note 填写任意名称，勾选 <b>public_repo</b> 权限即可</span>
+          </div>
+          <div class="flex items-start gap-2">
+            <span class="font-bold text-primary whitespace-nowrap">4.</span>
+            <span>生成后复制 Token，粘贴到上方输入框保存</span>
+          </div>
+          <p class="text-[10px] text-outline mt-1">配置后额度从 60次/小时 提升至 <b>5000次/小时</b></p>
+        </div>
+      </details>
+    </div>
+
+    <!-- AI 模型 Tab -->
+    <div id="panelAi" class="hidden space-y-4">
+      <div>
+        <label class="text-sm font-bold text-on-surface mb-1.5 block">模型商</label>
+        <div class="grid grid-cols-2 gap-1.5" id="providerGrid"></div>
+      </div>
+      <div>
+        <label for="aiApiKey" class="text-sm font-bold text-on-surface mb-1.5 block">API Key</label>
+        <input id="aiApiKey" type="password" placeholder="输入你的 API Key"
+               class="w-full border border-outline-variant rounded-lg px-3 py-2.5 text-sm bg-surface-container-lowest focus:border-primary focus:outline-none font-label"
+               autocomplete="off"/>
+        <p class="text-[10px] text-on-surface-variant mt-1">密钥仅保存在浏览器本地存储，不会上传至服务器</p>
+      </div>
+      <div>
+        <label for="aiModel" class="text-sm font-bold text-on-surface mb-1.5 block">模型名称 <span class="text-[10px] text-on-surface-variant font-normal">(可选)</span></label>
+        <input id="aiModel" type="text" placeholder="如 gpt-4o-mini、deepseek-chat"
+               class="w-full border border-outline-variant rounded-lg px-3 py-2.5 text-sm bg-surface-container-lowest focus:border-primary focus:outline-none font-label"
+               autocomplete="off"/>
+      </div>
+    </div>
+
+    <!-- 按钮区 -->
+    <div class="flex gap-2 pt-4">
+      <button onclick="toggleSettings()" class="flex-1 border border-outline text-on-surface-variant px-4 py-2.5 rounded-lg font-label text-sm hover:bg-surface-container-low transition-all">取消</button>
+      <button onclick="saveSettings()" class="flex-1 bg-primary text-on-primary px-4 py-2.5 rounded-lg font-label text-sm font-bold hover:opacity-90 transition-all">保存配置</button>
+    </div>
+  </div>
+</div>
+
+<!-- ====== AI 评分加载弹窗 ====== -->
+<div class="modal-overlay" id="aiLoadingModal">
+  <div class="modal-panel p-8 text-center">
+    <div class="inline-flex items-center justify-center w-14 h-14 rounded-full bg-surface-container mb-4">
+      <span class="material-symbols-outlined loading-spinner text-2xl text-primary">progress_activity</span>
+    </div>
+    <p class="font-bold text-on-surface mb-1">AI 正在评估项目...</p>
+    <p class="text-sm text-on-surface-variant">正在调用模型进行分析</p>
+  </div>
+</div>
+
+<script>
+// ===================== 状态管理 =====================
+const STATE = {
+  analysisData: null,
+  ruleScore: null,
+  aiScore: null,
+  githubToken: null,
+  aiConfigured: false,
+  aiProvider: null,
+  aiApiKey: null,
+  aiModel: null
+};
+
+const VIEWS = ['inputView', 'loadingView', 'errorView', 'dashboardView'];
+function showView(name) {
+  VIEWS.forEach(v => document.getElementById(v).classList.add('hidden'));
+  const el = document.getElementById(name);
+  el.classList.remove('hidden');
+  el.classList.add('fade-in');
+}
+
+// ===================== AI Provider =====================
+const PROVIDERS = [
+  { id: 'openai',    name: 'OpenAI',       icon: 'bolt' },
+  { id: 'deepseek',  name: 'DeepSeek',     icon: 'anchor' },
+  { id: 'kimi',      name: 'Kimi 月之暗面', icon: 'dark_mode' },
+  { id: 'doubao',    name: '豆包',          icon: 'energy_savings_leaf' },
+  { id: 'qwen',      name: '通义千问',      icon: 'psychology' },
+  { id: 'claude',    name: 'Claude',       icon: 'neurology' }
+];
+
+function initProviderGrid() {
+  const grid = document.getElementById('providerGrid');
+  grid.innerHTML = PROVIDERS.map(p => {
+    const selected = STATE.aiProvider === p.id ? 'border-primary bg-primary-container/10' : 'border-outline-variant';
+    return `<button onclick="selectProvider('${p.id}')" data-provider="${p.id}"
+      class="flex items-center gap-1.5 px-3 py-2 rounded-lg border ${selected} hover:border-primary transition-all text-sm">
+      <span class="material-symbols-outlined text-base">${p.icon}</span>
+      <span>${p.name}</span>
+    </button>`;
+  }).join('');
+}
+
+function selectProvider(id) {
+  STATE.aiProvider = id;
+  initProviderGrid();
+}
+
+// ===================== Settings Modal =====================
+let _settingsTab = 'github';
+
+function switchSettingsTab(tab) {
+  _settingsTab = tab;
+  document.getElementById('tabGithub').className = tab === 'github'
+    ? 'flex-1 pb-2 text-sm font-bold border-b-2 transition-colors border-primary text-primary font-label'
+    : 'flex-1 pb-2 text-sm font-bold border-b-2 transition-colors border-transparent text-on-surface-variant font-label';
+  document.getElementById('tabAi').className = tab === 'ai'
+    ? 'flex-1 pb-2 text-sm font-bold border-b-2 transition-colors border-primary text-primary font-label'
+    : 'flex-1 pb-2 text-sm font-bold border-b-2 transition-colors border-transparent text-on-surface-variant font-label';
+  document.getElementById('panelGithub').classList.toggle('hidden', tab !== 'github');
+  document.getElementById('panelAi').classList.toggle('hidden', tab !== 'ai');
+}
+
+function toggleGhTokenVisibility() {
+  const inp = document.getElementById('ghTokenInput');
+  inp.type = inp.type === 'password' ? 'text' : 'password';
+}
+
+function updateGhTokenUI() {
+  const dot = document.getElementById('ghTokenStatus');
+  const label = document.getElementById('ghTokenLabel');
+  if (STATE.githubToken) {
+    dot.className = 'w-2 h-2 rounded-full bg-secondary';
+    label.textContent = '已配置 · 额度 5000次/小时';
+    label.className = 'text-xs text-secondary font-label';
+  } else {
+    dot.className = 'w-2 h-2 rounded-full bg-outline';
+    label.textContent = '未配置 · 额度 60次/小时';
+    label.className = 'text-xs text-on-surface-variant font-label';
+  }
+}
+
+function toggleSettings(forceTab) {
+  const modal = document.getElementById('settingsModal');
+  modal.classList.toggle('active');
+  if (modal.classList.contains('active')) {
+    if (forceTab) _settingsTab = forceTab;
+    switchSettingsTab(_settingsTab);
+    initProviderGrid();
+    document.getElementById('aiApiKey').value = STATE.aiApiKey || '';
+    document.getElementById('aiModel').value = STATE.aiModel || '';
+    document.getElementById('ghTokenInput').value = STATE.githubToken || '';
+    updateGhTokenUI();
+  }
+}
+
+function saveSettings() {
+  // 保存 GitHub Token
+  const ghToken = document.getElementById('ghTokenInput').value.trim();
+  STATE.githubToken = ghToken || null;
+
+  // 保存 AI 配置（只有完整填写才生效）
+  const key = document.getElementById('aiApiKey').value.trim();
+  const model = document.getElementById('aiModel').value.trim();
+  if (_settingsTab === 'ai' || (STATE.aiProvider && key)) {
+    STATE.aiApiKey = key;
+    STATE.aiModel = model || null;
+    STATE.aiConfigured = !!(STATE.aiProvider && key);
+  }
+
+  // 持久化到 localStorage
+  localStorage.setItem('reposcope_settings', JSON.stringify({
+    githubToken: STATE.githubToken,
+    ai: {
+      provider: STATE.aiProvider,
+      apiKey: STATE.aiApiKey,
+      model: STATE.aiModel
+    }
+  }));
+
+  updateSettingsBadge();
+  updateGhTokenUI();
+  document.getElementById('settingsModal').classList.remove('active');
+}
+
+function updateSettingsBadge() {
+  const badge = document.getElementById('settingsBadge');
+  const parts = [];
+  if (STATE.githubToken) parts.push('GitHub');
+  if (STATE.aiConfigured) {
+    const p = PROVIDERS.find(x => x.id === STATE.aiProvider);
+    parts.push(p ? p.name : 'AI');
+  }
+  if (parts.length > 0) {
+    badge.textContent = parts.join(' + ');
+    badge.classList.add('text-primary');
+  } else {
+    badge.textContent = '设置';
+    badge.classList.remove('text-primary');
+  }
+}
+
+// Load saved settings
+(function() {
+  try {
+    const saved = JSON.parse(localStorage.getItem('reposcope_settings'));
+    if (saved) {
+      if (saved.githubToken) STATE.githubToken = saved.githubToken;
+      if (saved.ai && saved.ai.provider && saved.ai.apiKey) {
+        STATE.aiProvider = saved.ai.provider;
+        STATE.aiApiKey = saved.ai.apiKey;
+        STATE.aiModel = saved.ai.model || null;
+        STATE.aiConfigured = true;
+      }
+    }
+  } catch(_) {}
+  updateSettingsBadge();
+  updateGhTokenUI();
+})();
+
+// ===================== 分析方法 =====================
+async function startAnalysis() {
+  const url = document.getElementById('repoUrlInput').value.trim();
+  if (!url && !STATE.analysisData) {
+    document.getElementById('repoUrlInput').focus();
+    return;
+  }
+
+  // If we already have data and we're re-analyzing
+  const analyzeUrl = url || document.getElementById('repoUrlInput').dataset.lastUrl;
+  if (!analyzeUrl) return;
+
+  document.getElementById('repoUrlInput').dataset.lastUrl = analyzeUrl;
+  showView('loadingView');
+
+  try {
+    const res = await fetch('/api/analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: analyzeUrl, githubToken: STATE.githubToken || undefined })
+    });
+    const result = await res.json();
+    if (!result.success) {
+      const errMsg = result.error || '';
+      // 检测速率限制错误 → 打开设置弹窗
+      if (errMsg.startsWith('github_rate_limit||')) {
+        document.getElementById('errorTitle').textContent = 'API 速率限制';
+        document.getElementById('errorDetail').innerHTML = errMsg.replace('github_rate_limit||', '')
+          .replace('点击右上角「设置」配置 GitHub Token', '<a href="javascript:void(0)" onclick="toggleSettings(\'github\');showView(\'inputView\')" class="text-primary underline font-bold">点击这里打开设置 → GitHub Token</a>');
+        showView('errorView');
+        return;
+      }
+      throw new Error(errMsg);
+    }
+
+    STATE.analysisData = result.data;
+    STATE.ruleScore = result.ruleScore;
+    STATE.ruleBreakdown = result.ruleScore?.breakdown || null;
+    STATE.category = result.category || null;
+    STATE.aiScore = null;
+    STATE.aiBreakdown = null;
+    STATE.lastUrl = analyzeUrl;
+
+    saveToHistory(analyzeUrl, result.data, result.ruleScore, result.category);
+    renderDashboard();
+    showView('dashboardView');
+  } catch (err) {
+    document.getElementById('errorTitle').textContent = '分析失败';
+    document.getElementById('errorDetail').textContent = err.message;
+    showView('errorView');
+  }
+}
+
+// ===================== AI 评分 =====================
+async function requestAiScore() {
+  if (!STATE.aiConfigured) {
+    alert('请先配置模型商和 API Key');
+    toggleSettings('ai');
+    return;
+  }
+  if (!STATE.analysisData) return;
+
+  document.getElementById('aiLoadingModal').classList.add('active');
+
+  try {
+    const res = await fetch('/api/ai-score', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        repoData: STATE.analysisData,
+        provider: STATE.aiProvider,
+        apiKey: STATE.aiApiKey,
+        model: STATE.aiModel
+      })
+    });
+    const result = await res.json();
+    if (!result.success) throw new Error(result.error);
+
+    STATE.aiScore = result.data;
+    // AI 返回了 breakdown 直接使用，否则用 strengths/risks 构造
+    STATE.aiBreakdown = result.data.breakdown || buildFallbackBreakdown(result.data);
+    updateAiScore(result.data);
+    renderDimensionScores(result.data, 'AI 模型');
+  } catch (err) {
+    alert('AI 评分失败: ' + err.message);
+  } finally {
+    document.getElementById('aiLoadingModal').classList.remove('active');
+  }
+}
+
+// 评分信息提示切换
+function toggleScoreInfo() {
+  document.getElementById('scoreInfoTip').classList.toggle('hidden');
+}
+
+// AI评分按钮 - 检查是否已配置
+function handleAiScore() {
+  if (!STATE.aiConfigured) {
+    alert('请先配置模型商和 API Key');
+    toggleSettings('ai');
+    return;
+  }
+  requestAiScore();
+}
+
+// ===================== 仪表盘渲染 =====================
+function formatNum(n) {
+  if (n >= 1000) return (n/1000).toFixed(1) + 'k';
+  return String(n);
+}
+function timeAgo(iso) {
+  if (!iso) return '未知';
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 60) return mins <= 1 ? '刚刚' : `${mins} 分钟前`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs} 小时前`;
+  const days = Math.floor(hrs / 24);
+  if (days < 30) return `${days} 天前`;
+  return new Date(iso).toLocaleDateString('zh-CN');
+}
+
+// Language color map
+const LANG_COLORS = {
+  TypeScript: '#3178c6', JavaScript: '#f1e05a', Python: '#3572A5', Java: '#b07219',
+  Go: '#00ADD8', Rust: '#dea584', 'C++': '#f34b7d', C: '#555555', Ruby: '#701516',
+  PHP: '#4F5D95', Swift: '#F05138', Kotlin: '#A97BFF', Dart: '#00B4AB',
+  HTML: '#e34c26', CSS: '#563d7c', Shell: '#89e051', Vue: '#41b883',
+  SCSS: '#c6538c', MDX: '#fcb32c', 'Jupyter Notebook': '#DA5B0B'
+};
+
+function renderDashboard() {
+  const d = STATE.analysisData;
+  if (!d) return;
+
+  // Header
+  document.getElementById('dashAvatar').src = d.basic.avatar || '';
+  document.getElementById('dashOwner').textContent = d.basic.owner;
+  document.getElementById('dashName').textContent = d.basic.name;
+  document.getElementById('dashDesc').textContent = d.basic.description || '(无描述)';
+
+  // GitHub link
+  document.getElementById('dashGithubLink').href = `https://github.com/${d.basic.name}`;
+
+  // Category badge
+  const catEl = document.getElementById('dashCategory');
+  const cat = STATE.category;
+  if (cat && cat.name) {
+    catEl.className = 'px-2 py-0.5 rounded text-xs font-label ml-1 text-white flex items-center gap-1 inline-flex';
+    catEl.style.backgroundColor = cat.color || '#727785';
+    catEl.innerHTML = `<span class="material-symbols-outlined text-[14px]">${cat.icon}</span>${cat.name}`;
+  } else {
+    catEl.classList.add('hidden');
+  }
+
+  // Metrics
+  document.getElementById('metricStars').textContent = formatNum(d.basic.stars);
+  document.getElementById('metricForks').textContent = formatNum(d.basic.forks);
+  document.getElementById('metricWatch').textContent = formatNum(d.basic.watchers);
+  document.getElementById('metricIssues').textContent = formatNum(d.basic.open_issues);
+
+  // Info
+  document.getElementById('infoLastPush').textContent = timeAgo(d.basic.pushed_at);
+  document.getElementById('infoLastRelease').textContent = d.latest_release?.tag || '无发布';
+  document.getElementById('infoContributors').textContent = formatNum(d.community.contributors);
+  document.getElementById('infoCreated').textContent = new Date(d.basic.created_at).toLocaleDateString('zh-CN');
+  document.getElementById('infoBranch').textContent = d.basic.default_branch;
+  document.getElementById('infoLicense').textContent = d.basic.license_name || '未检测到';
+  document.getElementById('infoSize').textContent = (d.basic.size / 1024).toFixed(1) + ' MB';
+  document.getElementById('infoTopics').textContent = d.basic.topics?.join(', ') || '无';
+
+  // Language bar
+  const langBar = document.getElementById('langBar');
+  const langLegend = document.getElementById('langLegend');
+  langBar.innerHTML = d.languages.slice(0, 5).map(l => {
+    const color = LANG_COLORS[l.name] || '#888';
+    return `<div class="h-full" style="width:${Math.max(l.percentage, 1)}%; background:${color}" title="${l.name}: ${l.percentage}%"></div>`;
+  }).join('');
+  langLegend.innerHTML = d.languages.slice(0, 5).map(l => {
+    const color = LANG_COLORS[l.name] || '#888';
+    return `<div class="flex items-center justify-between">
+      <div class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full inline-block" style="background:${color}"></span><span class="text-xs">${l.name}</span></div>
+      <span class="text-xs font-bold font-label">${l.percentage}%</span>
+    </div>`;
+  }).join('');
+
+  // Community
+  document.getElementById('valIssueClose').textContent = d.community.issue_close_rate + '%';
+  document.getElementById('barIssueClose').style.width = d.community.issue_close_rate + '%';
+  document.getElementById('valPRMerge').textContent = d.community.pr_merge_rate + '%';
+  document.getElementById('valOpenIssues').textContent = formatNum(d.community.open_issues);
+  document.getElementById('valOpenPRs').textContent = formatNum(d.community.open_prs);
+
+  // Docs grid
+  const docs = [
+    { key: 'hasReadme', label: 'README', icon: 'menu_book' },
+    { key: 'hasLicense', label: 'LICENSE', icon: 'gavel' },
+    { key: 'hasContributing', label: 'CONTRIB', icon: 'group' },
+    { key: 'hasChangelog', label: 'CHANGELOG', icon: 'history' }
+  ];
+  document.getElementById('docsGrid').innerHTML = docs.map(doc => {
+    const exists = d.docs[doc.key];
+    return `<div class="flex flex-col items-center gap-1 p-3 rounded-lg border ${exists ? 'bg-blue-50/30 border-outline-variant' : 'bg-surface-container-low border-outline-variant opacity-40'}">
+      <span class="material-symbols-outlined ${exists ? 'text-secondary' : 'text-outline'} text-lg" style="font-variation-settings: 'FILL' ${exists ? 1 : 0};">${exists ? 'check_circle' : 'cancel'}</span>
+      <span class="text-xs font-bold">${doc.label}</span>
+    </div>`;
+  }).join('');
+
+  // Rule score
+  updateRuleScore(STATE.ruleScore);
+  renderDimensionScores(STATE.ruleScore, '规则引擎');
+}
+
+function scoreColor(total) {
+  if (total >= 85) return '#006e2c';
+  if (total >= 70) return '#0051ae';
+  if (total >= 50) return '#923800';
+  return '#ba1a1a';
+}
+
+function updateRuleScore(score) {
+  if (!score) return;
+  const total = score.totalScore || 0;
+  const color = scoreColor(total);
+  document.getElementById('ruleScoreVal').textContent = total;
+  document.getElementById('ruleScoreLvl').textContent = score.level || '--';
+  document.getElementById('ruleScoreLvl').style.background = color + '18';
+  document.getElementById('ruleScoreLvl').style.color = color;
+  document.getElementById('ruleDot').style.background = color;
+
+  // Show summary from AI if available, otherwise from rule
+  if (score.summary && !STATE.aiScore?.summary) {
+    const s = document.getElementById('scoreSummary');
+    s.textContent = score.summary;
+    s.classList.remove('hidden');
+  }
+}
+
+function updateAiScore(score) {
+  if (!score) return;
+  const total = score.totalScore || 0;
+  const color = scoreColor(total);
+
+  document.getElementById('aiDot').style.background = color;
+  document.getElementById('aiScoreVal').textContent = total;
+  document.getElementById('aiScoreLvl').textContent = score.level || '--';
+  document.getElementById('aiScoreLvl').style.background = color + '18';
+  document.getElementById('aiScoreLvl').style.color = color;
+
+  // Show AI result, hide pending
+  document.getElementById('aiScorePending').classList.add('hidden');
+  document.getElementById('aiScoreResult').classList.remove('hidden');
+
+  // Show summary from AI
+  if (score.summary) {
+    const s = document.getElementById('scoreSummary');
+    s.textContent = score.summary;
+    s.classList.remove('hidden');
+  }
+
+  // Enable dimension comparison toggle
+  document.getElementById('dimCompareToggle').classList.remove('hidden');
+}
+
+// Current displayed dimension source
+let _dimSource = 'rule';
+
+function renderDimensionScores(score, sourceLabel) {
+  if (!score || !score.scores) return;
+  _dimSource = sourceLabel === 'AI 模型' ? 'ai' : 'rule';
+  const container = document.getElementById('dimensionScores');
+  container.classList.remove('hidden');
+  const bars = document.getElementById('dimensionBars');
+  const dimSrc = document.getElementById('dimSourceLabel');
+  dimSrc.textContent = '来源: ' + (sourceLabel || '规则引擎');
+  dimSrc.style.color = _dimSource === 'ai' ? '#7c3aed' : '#727785';
+
+  const labels = {
+    popularity: '社区热度',
+    activity: '维护活跃度',
+    documentation: '文档完整度',
+    engineering: '工程规范',
+    sustainability: '可持续性'
+  };
+
+  // 获取对应来源的 breakdown
+  const bd = _dimSource === 'rule' ? (STATE.ruleBreakdown || {}) : (STATE.aiBreakdown || {});
+
+  bars.innerHTML = Object.entries(score.scores).map(([key, val]) => {
+    const pct = Math.min(Math.round(val), 100);
+    const barColor = scoreColor(pct);
+    const lines = bd[key] || [];
+    const hasDetail = lines.length > 0;
+    // 构建明细行
+    const detailItems = lines.map(l => `<div class="text-[10px] text-on-surface-variant ${l.startsWith('├') || l.startsWith('└') ? 'pl-2 font-label' : ''} ${l.startsWith('✅') ? 'text-secondary' : ''} ${l.startsWith('❌') ? 'text-error' : ''} ${l.startsWith('⚠️') ? 'text-tertiary' : ''}">${l}</div>`).join('');
+    const detailId = `detail_${_dimSource}_${key}`;
+
+    return `<div class="dim-row cursor-pointer" onclick="toggleDimDetail('${detailId}')">
+      <div class="flex justify-between items-center text-xs mb-0.5">
+        <span class="flex items-center gap-1"><span class="text-on-surface-variant">${labels[key] || key}</span>${hasDetail ? '<span class="material-symbols-outlined text-[14px] text-outline">info</span>' : ''}</span>
+        <span class="font-bold font-label">${pct}</span>
+      </div>
+      <div class="w-full h-1.5 bg-surface-container-high rounded-full overflow-hidden mb-0.5">
+        <div class="h-full rounded-full transition-all duration-500" style="width:${pct}%; background:${barColor}"></div>
+      </div>
+      <div id="${detailId}" class="hidden bg-surface-container-low border border-outline-variant rounded-lg p-2 mb-2 space-y-0.5">${detailItems}</div>
+    </div>`;
+  }).join('');
+
+  // Update toggle button states
+  const btnR = document.getElementById('btnDimRule');
+  const btnA = document.getElementById('btnDimAi');
+  if (btnR && btnA) {
+    btnR.className = _dimSource === 'rule'
+      ? 'flex-1 text-[10px] py-1 rounded font-label font-bold bg-primary-container/10 text-primary'
+      : 'flex-1 text-[10px] py-1 rounded font-label border border-outline-variant text-on-surface-variant';
+    btnA.className = _dimSource === 'ai'
+      ? 'flex-1 text-[10px] py-1 rounded font-label font-bold bg-primary-container/10 text-primary'
+      : 'flex-1 text-[10px] py-1 rounded font-label border border-outline-variant text-on-surface-variant';
+  }
+}
+
+function toggleDimDetail(id) {
+  const el = document.getElementById(id);
+  if (el) el.classList.toggle('hidden');
+}
+
+// AI 未返回 breakdown 时，从 strengths/risks/suggestions 构造
+function buildFallbackBreakdown(score) {
+  if (!score) return {};
+  const strengths = score.strengths || [];
+  const risks = score.risks || [];
+  const suggestions = score.suggestions || [];
+  const dimKeys = ['popularity', 'activity', 'documentation', 'engineering', 'sustainability'];
+  const result = {};
+  dimKeys.forEach(k => {
+    const val = score.scores?.[k] || 0;
+    const lines = [];
+    lines.push(`AI 综合评分: ${val}/100 分`);
+    if (strengths.length) lines.push(`✅ ${strengths[Math.min(dimKeys.indexOf(k), strengths.length - 1)] || strengths[0]}`);
+    if (risks.length) lines.push(`⚠️ ${risks[Math.min(dimKeys.indexOf(k), risks.length - 1)] || risks[0]}`);
+    if (suggestions.length) lines.push(`📌 建议: ${suggestions[Math.min(dimKeys.indexOf(k), suggestions.length - 1)] || suggestions[0]}`);
+    result[k] = lines;
+  });
+  return result;
+}
+
+function showDimRule() {
+  if (STATE.ruleScore) renderDimensionScores(STATE.ruleScore, '规则引擎');
+}
+
+function showDimAi() {
+  if (STATE.aiScore) renderDimensionScores(STATE.aiScore, 'AI 模型');
+}
+
+// ===================== 历史记录 =====================
+const HISTORY_KEY = 'reposcope_history';
+const MAX_HISTORY = 20;
+
+function loadHistory() {
+  try { return JSON.parse(localStorage.getItem(HISTORY_KEY)) || []; }
+  catch(_) { return []; }
+}
+
+function saveToHistory(url, data, score, category) {
+  let list = loadHistory();
+  // Remove duplicate same repo
+  list = list.filter(h => h.name !== data.basic.name);
+  list.unshift({
+    name: data.basic.name,
+    url: url,
+    owner: data.basic.owner,
+    avatar: data.basic.avatar,
+    score: score?.totalScore || 0,
+    level: score?.level || '',
+    category: category?.name || '',
+    categoryColor: category?.color || '',
+    categoryIcon: category?.icon || '',
+    time: Date.now()
+  });
+  if (list.length > MAX_HISTORY) list = list.slice(0, MAX_HISTORY);
+  localStorage.setItem(HISTORY_KEY, JSON.stringify(list));
+}
+
+function renderHistory() {
+  const section = document.getElementById('historySection');
+  const listEl = document.getElementById('historyList');
+  const list = loadHistory();
+  if (list.length === 0) {
+    section.classList.add('hidden');
+    return;
+  }
+  section.classList.remove('hidden');
+
+  // Sort by time
+  list.sort((a, b) => b.time - a.time);
+
+  listEl.innerHTML = list.map((h, i) => {
+    let scColor = '#727785';
+    if (h.score >= 85) scColor = '#006e2c';
+    else if (h.score >= 70) scColor = '#0051ae';
+    else if (h.score >= 50) scColor = '#923800';
+    else scColor = '#ba1a1a';
+
+    const catHtml = h.category
+      ? `<span class="px-1.5 py-0.5 rounded text-[10px] font-label text-white flex items-center gap-0.5" style="background:${h.categoryColor || '#727785'}"><span class="material-symbols-outlined text-[12px]">${h.categoryIcon || 'folder'}</span>${h.category}</span>`
+      : '';
+
+    return `<div onclick="showHistoryEntry('${i}')" class="flex items-center justify-between p-3 bg-surface-container-lowest border border-outline-variant rounded-xl hover:border-primary hover:shadow-sm cursor-pointer transition-all">
+      <div class="flex items-center gap-3 min-w-0">
+        <img src="${h.avatar}" class="w-8 h-8 rounded-full flex-shrink-0" alt=""/>
+        <div class="min-w-0">
+          <div class="flex items-center gap-2 flex-wrap">
+            <span class="text-sm font-bold text-on-surface truncate">${h.name}</span>
+            ${catHtml}
+          </div>
+          <p class="text-[10px] text-on-surface-variant font-label">${timeAgo(h.time)}</p>
+        </div>
+      </div>
+      <div class="flex items-center gap-2 flex-shrink-0 ml-3">
+        <span class="text-lg font-bold font-label" style="color:${scColor}">${h.score}</span>
+        <span class="text-xs font-label" style="color:${scColor}">${h.level}</span>
+        <span class="material-symbols-outlined text-on-surface-variant text-base">chevron_right</span>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function showHistoryEntry(index) {
+  const list = loadHistory();
+  const entry = list[index];
+  if (!entry) return;
+  document.getElementById('repoUrlInput').value = entry.url;
+  startAnalysis();
+}
+
+// Override showView to render history when showing input
+const _origShowView = showView;
+showView = function(name) {
+  _origShowView(name);
+  if (name === 'inputView') renderHistory();
+};
+
+function resetApp() {
+  STATE.analysisData = null;
+  STATE.ruleScore = null;
+  STATE.ruleBreakdown = null;
+  STATE.aiScore = null;
+  STATE.aiBreakdown = null;
+  STATE.lastUrl = null;
+  document.getElementById('repoUrlInput').value = '';
+  // Reset AI score UI to pending
+  document.getElementById('aiScorePending').classList.remove('hidden');
+  document.getElementById('aiScoreResult').classList.add('hidden');
+  document.getElementById('aiDot').style.background = '#c2c6d6';
+  document.getElementById('dimCompareToggle').classList.add('hidden');
+  document.getElementById('scoreSummary').classList.add('hidden');
+  document.getElementById('dimensionScores').classList.add('hidden');
+  showView('inputView');
+}
+
+// Enter key to analyze
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && document.activeElement?.id === 'repoUrlInput') {
+    startAnalysis();
+  }
+});
+
+// Close modals on overlay click
+document.getElementById('settingsModal').addEventListener('click', function(e) {
+  if (e.target === this) toggleSettings();
+});
+
+// Close modal with Escape
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    document.getElementById('settingsModal').classList.remove('active');
+    document.getElementById('aiLoadingModal').classList.remove('active');
+  }
+});
+</script>
+</body>
+</html>
